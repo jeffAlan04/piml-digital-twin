@@ -6,8 +6,13 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
 #Parametri fisici
-alpha1 = 0.001
-alpha2 = 0.1 # Coefficiente di scambio termico tra la stanza e l'esterno
+alpha1 = 0.001 # Quanto velocemente A reagisce ai cambiamenti
+alpha2 = 0.1 # Coefficiente di scambio termico tra la stanza A e l'esterno
+alpha3 = 0.1 # Scambio termico tra le due stanze
+alpha4 = 0.002 # Quanto velocemente B reagisce ai cambiamenti
+alpha5 = 0.1 # Coefficiente di scambio termico tra la stanza B e l'esterno
+alpha7 = 1.0 # Potenza massima heater A
+alpha8 = 0.5 # Potenza massima heater B
 alpha9 = 0.1 # Efficienza del cooler
 T_out = 15  # Temperatura esterna
 H_max = 1.0  # Potenza massima del riscaldatore
@@ -51,15 +56,24 @@ def get_heater_power(t, actions):
 
 # Equazione differenziale
 def deriv(t, y):
-    T = y[0] # Temperatura corrente
-    H = get_heater_power(t, actions) # Potenza del riscaldatore al tempo t
+    T_A = y[0] # Temperatura corrente stanza A
+    T_B = y[1] # Temperatura corrente stanza B
+    
+    heater_on = get_heater_power(t, actions) # Restituisce se l'heater e' acceso o spento (1 o 0)
+    
+    H_A = alpha7 * heater_on # Potenza del riscaldatore A al tempo t
+    H_B = alpha8 * heater_on # Potenza del riscaldatore B al tempo t
+    
     C = get_cooler_power(t, actions) # Potenza del cooler al tempo t
-    dTdt = alpha1 * (alpha2 * (T_out - T) + H - C) # Cambiamenti di gradi al secondo in questo istante
+    
+    dTdt_A = alpha1 * (alpha2 * (T_out - T_A) + H_A - C + alpha3 * (T_B - T_A)) # Differenza di temperatura al secondo in questo istante nella stanza A
+    dTdt_B = alpha4 * (alpha5 * (T_out - T_B) + H_B + alpha3 * (T_A - T_B)) # Differenza di temperatura al secondo in questo istante nella stanza B
 
-    return [dTdt]
+    return [dTdt_A, dTdt_B]
 
 #Condizioni iniziali
-T_initial = 10.0 
+T_A_initial = 10.0 
+T_B_initial = 10.0 
 # Intervallo di tempo
 t_start = 0
 t_end = 36000
@@ -69,17 +83,19 @@ t_eval = np.arange(t_start, t_end, 60) # Punti in cui si vuole conoscere la temp
 solution = solve_ivp(
     fun = deriv, # Funzione che calcola le derivate
     t_span = [t_start, t_end], # Intervallo di tempo
-    y0 = [T_initial], 
+    y0 = [T_A_initial, T_B_initial], 
     t_eval = t_eval,
     method = 'RK45'
 )
 
 times = solution.t  # Array dei tempi
-temperature = solution.y[0]  # Array delle temperature
+temp_A = solution.y[0]  # Temperature stanza A
+temp_B = solution.y[1]  # Temperature stanza B
 
 # Aggiunta del rumore
 sigma = 0.1
-measured_temperatures = temperature + np.random.normal(0, sigma, size = len(temperature))
+measured_A_temp = temp_A + np.random.normal(0, sigma, size = len(temp_A))
+measured_B_temp = temp_B + np.random.normal(0, sigma, size = len(temp_B))
 
 # Restituisce la potenza del riscaldatore ad ogni momento
 heater_state = np.array([get_heater_power(t, actions) for t in times])
@@ -89,25 +105,25 @@ hour = times / 3600
 
 # Stampa
 time_step = np.arange(t_start, t_end + 1, 1800)
-print(f"{'Hour':>6} | {'T real':>10} | {'T Measured':>10} | {'Heater':>12} | {'Cooler':>10}")
+print(f"{'Hour':>6} | {'T A real':>10} | {'T A Measured':>10} | {'T B real':>10} | {'T B Measured':>10} |  {'Heater':>12} | {'Cooler':>10}")
 
-for t_step in time_step:
-    idx = np.argmin(np.abs(times - t_step))
-    hour_stamp = t_step / 3600
-    T_real = temperature[idx]
-    T_measured = measured_temperatures[idx]
-    heater = "ON" if get_heater_power(t_step, actions) > 0 else "OFF"
-    cooler_val = get_cooler_power(t_step, actions) / alpha9
-    print(f"{hour_stamp:5.1f}h | {T_real:9.4f} C | {T_measured:9.4f} C | {heater:>12} | {cooler_val:>8.0f}/9")
+for step in time_step:
+    idx = np.argmin(np.abs(times - step))
+    hour_stamp = step / 3600
+    heater = "ON" if get_heater_power(step, actions) > 0 else "OFF"
+    cooler_val = get_cooler_power(step, actions) / alpha9
+    print(f"{hour_stamp:5.1f}h | {temp_A[idx]:9.4f} C | {measured_A_temp[idx]:9.4f} C | {temp_B[idx]:9.4f} C | {measured_B_temp[idx]:9.4f} C  | {heater:>12} | {cooler_val:>8.0f}/9")
 
-print(f"Final real temperature: {temperature[-1]:.4f} C")
+print(f"Final real temperature: A = {temp_A[-1]:.4f} C, B = {temp_B[-1]:.4f} C")
 
 # Grafico
 fig, ax1 = plt.subplots(figsize=(12,6))
  
 # Temperature 
-ax1.plot(hour, temperature, 'b-', linewidth=2, label='Real temperature')
-ax1.scatter(hour[::5], measured_temperatures[::5], c='red', s=8, alpha=0.5, label='Sensor Measure')
+ax1.plot(hour, temp_A, 'b-', linewidth=2, label='Real temperature A')
+ax1.plot(hour, temp_B, 'r-', linewidth=2, label='Real temperature B')
+ax1.scatter(hour[::5], measured_A_temp[::5], c='blue', s=8, alpha=0.5, label='Sensor Measure A')
+ax1.scatter(hour[::5], measured_B_temp[::5], c='red', s=8, alpha=0.5, label='Sensor Measure B')
 ax1.set_ylabel('Temperature (C)')
 ax1.set_xlabel('Time (hour)')
 ax1.tick_params(axis='y')
@@ -116,10 +132,11 @@ ax1.grid(True, alpha=0.3)
 # Attuatori 
 ax2 = ax1.twinx()
 ax2.fill_between(hour, 0, heater_state, alpha=0.15, color='orange', label='Heater')
-ax2.fill_between(hour, 0, -cooler_state, alpha=0.15, color='cyan', label='Cooler')
+cooler_setpoint = cooler_state / alpha9
+ax2.fill_between(hour, 0, -cooler_setpoint, alpha=0.15, color='cyan', label='Cooler')
 ax2.set_ylabel('Power')
 ax1.tick_params(axis='y')
-ax2.set_ylim(-1.5, 3)
+ax2.set_ylim(-10, 5)
 
 lines1, labels1 = ax1.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
