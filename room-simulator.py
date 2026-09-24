@@ -17,6 +17,8 @@ alpha8 = 0.5 # Potenza massima heater B
 alpha9 = 0.1 # Efficienza del cooler
 T_out = 15  # Temperatura esterna
 H_max = 1.0  # Potenza massima del riscaldatore
+sigma = 0.1
+
 
 
 # Definizione delle azioni (istante, heater (acceso/spento), potenza del cooler (0-9))
@@ -32,7 +34,7 @@ actions = [
 def get_cooler_power(t, actions):
     # Dato un tempo t, restituisce la potenza del raffreddatore 
     # guardando l'ultima azione eseguita prima di t
-    current_power = 0 # Stato iniziale
+    current_power = 0 
 
     for action_time, heater, cooler in actions:
         if t >= action_time:
@@ -74,7 +76,6 @@ def deriv(t, y):
 #Condizioni iniziali
 T_A_initial = 10.0 
 T_B_initial = 10.0 
-# Intervallo di tempo
 t_start = 0
 t_end = 36000
 t_eval = np.arange(t_start, t_end, 60) # Punti in cui si vuole conoscere la temperatura (ogni 60 secondi)
@@ -96,7 +97,6 @@ heat_B = solution.y[3]  # Potenza effettiva heater B nel tempo
 
 
 # Aggiunta del rumore
-sigma = 0.1
 measured_A_temp = temp_A + np.random.normal(0, sigma, size = len(temp_A))
 measured_B_temp = temp_B + np.random.normal(0, sigma, size = len(temp_B))
 
