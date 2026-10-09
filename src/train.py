@@ -48,6 +48,7 @@ X_train, Y_train = map_XY(train_windows, prediction_steps)
 X_val, Y_val = map_XY(val_windows, prediction_steps)
 X_test, Y_test = map_XY(test_windows, prediction_steps)
 
+# Creazione del modello
 model = SeqGen(
     num_layers = num_layers,
     num_heads = num_heads,
@@ -70,7 +71,7 @@ early_stopping = tf.keras.callbacks.EarlyStopping(
     restore_best_weights = True
 )
 
-# Salva su disco il modello solo quando la val_loss migliora
+# Salva il modello solo quando la val_loss migliora
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
     filepath = 'model/best_model.keras',
     monitor = 'val_loss',
