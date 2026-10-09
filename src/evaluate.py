@@ -30,12 +30,22 @@ Y_pred_real = Y_pred * std + mean
 Y_test_real = Y_test * std + mean
 
 # Metriche
+mse = np.mean(np.power(Y_pred_real - Y_test_real, 2))
 mae = np.mean(np.abs(Y_pred_real - Y_test_real))
 rmse = np.sqrt(np.mean((Y_pred_real - Y_test_real) ** 2))
 
+y_true_mean = np.mean(Y_test_real)
+ss_tot = np.sum(np.power(Y_test_real - y_true_mean, 2))
+ss_res = np.sum(np.power(Y_test_real - Y_pred_real, 2))
+r2 = 1 - ss_res / ss_tot
+
+
 print(f"\nMetrics")
+print(f"MSE:  {mse:.4f}")
 print(f"MAE:  {mae:.4f} °C")
 print(f"RMSE: {rmse:.4f} °C")
+print(f"R^2: {r2:.4f}")
+
 
 n_samples = 200
 # Sensore A
