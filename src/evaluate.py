@@ -29,6 +29,7 @@ Y_pred = model.predict(X_test)
 Y_pred_real = Y_pred * std + mean
 Y_test_real = Y_test * std + mean
 
+# Metriche
 mae = np.mean(np.abs(Y_pred_real - Y_test_real))
 rmse = np.sqrt(np.mean((Y_pred_real - Y_test_real) ** 2))
 
@@ -37,6 +38,7 @@ print(f"MAE:  {mae:.4f} °C")
 print(f"RMSE: {rmse:.4f} °C")
 
 n_samples = 200
+# Sensore A
 plt.figure(figsize = (12, 4))
 plt.plot(Y_test_real[:n_samples, 0, 0], label = 'Real', alpha = 0.7)
 plt.plot(Y_pred_real[:n_samples, 0, 0], label = 'Predicted', alpha = 0.7)
@@ -46,6 +48,7 @@ plt.title('Sensor A')
 plt.legend()
 plt.tight_layout()
 
+# Sensore B
 plt.figure(figsize=(12, 4))
 plt.plot(Y_test_real[:n_samples, 1, 0], label='Real', alpha=0.7)
 plt.plot(Y_pred_real[:n_samples, 1, 0], label='Predicted', alpha=0.7)
@@ -55,6 +58,7 @@ plt.title('Sensor B')
 plt.legend()
 plt.tight_layout()
 
+# Scatter plot
 plt.figure(figsize = (12, 4))
 plt.scatter(Y_test_real[:, 0, 0], Y_pred_real[:, 0, 0], alpha = 0.3, s = 10)
 plt.plot([Y_test_real.min(), Y_test_real.max()],
