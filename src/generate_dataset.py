@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
-from src.room_simulator import deriv, get_heater_ref, get_cooler_power
+from room_simulator import deriv, get_heater_ref, get_cooler_power
 
 def generate_random_actions(duration, min_interval=300, max_interval=1500, seed=None):
     rng = np.random.default_rng(seed) # Generatore di numeri casuali
