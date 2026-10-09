@@ -5,7 +5,7 @@ from dataset import load_dataset, split_simulations, compute_stats, normalize_si
 from model import SeqGen
 
 # Crea la cartella per salvare le statistiche
-os.makedirs('models', exist_ok = True)
+os.makedirs('model', exist_ok = True)
 
 np.random.seed(42)
 tf.random.set_seed(42)
@@ -72,7 +72,7 @@ early_stopping = tf.keras.callbacks.EarlyStopping(
 
 # Salva su disco il modello solo quando la val_loss migliora
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
-    filepath = 'models/best_models.keras',
+    filepath = 'model/best_model.keras',
     monitor = 'val_loss',
     save_best_only = True
 )
@@ -88,7 +88,7 @@ model.fit(
     )
 
 # Salva mean e std
-np.savez('models/norm_stats.npz', mean = mean, std = std)
+np.savez('model/norm_stats.npz', mean = mean, std = std)
 print(f"Statistiche salvate: mean = {mean:.4f}, std = {std:.4f}")
 
 # Valutazione finale sul test set 
