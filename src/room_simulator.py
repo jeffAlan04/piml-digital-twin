@@ -84,7 +84,8 @@ if __name__ == '__main__':
         t_span = [t_start, t_end], # Intervallo di tempo
         y0 = [T_A_initial, T_B_initial, 0, 0], 
         t_eval = t_eval,
-        method = 'RK45'
+        method = 'RK45',
+        args = (actions, ),
     )
 
     times = solution.t  # Array dei tempi
