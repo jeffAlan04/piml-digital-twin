@@ -43,6 +43,17 @@ class EmbeddingLayer(layers.Layer):
 
         return embedded
 
+    def get_config(self):
+        # Restituisce gli argomenti del costruttore per poter
+        # salvare il layer e ricrearlo 
+        config = super().get_config()
+        config.update({
+            "d_model": self.d_model,
+            "num_types": self.num_types,
+            "num_positions": self.num_positions,
+        })
+        return config
+
 class EncoderLayer(layers.Layer):
     def __init__(
         self, 
@@ -54,6 +65,10 @@ class EncoderLayer(layers.Layer):
         **kwargs):
         
         super().__init__(name = name, **kwargs)
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dff = dff
+        self.dropout_rate = dropout_rate
 
         # Multi-Head Self-Attention
         # Ogni testa lavora su d_model // num_heads dimensioni
@@ -99,6 +114,16 @@ class EncoderLayer(layers.Layer):
 
         return x
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "d_model": self.d_model,
+            "num_heads": self.num_heads,
+            "dff": self.dff,
+            "dropout_rate": self.dropout_rate,
+        })
+        return config
+
 class Encoder(layers.Layer):
     def __init__(
         self, 
@@ -131,6 +156,18 @@ class Encoder(layers.Layer):
         
         return x
 
+    def get_config(self):
+        # Salva gli iperparametri dell'Encoder
+        config = super().get_config()
+        config.update({
+            "num_layers": len(self.encoder_layers),  
+            "d_model": self.encoder_layers[0].d_model,
+            "num_heads": self.encoder_layers[0].num_heads,
+            "dff": self.encoder_layers[0].dff,
+            "dropout_rate": self.encoder_layers[0].dropout_rate,
+        })
+        return config
+
 class DecoderLayer(layers.Layer):
     def __init__(
         self, 
@@ -142,6 +179,10 @@ class DecoderLayer(layers.Layer):
         **kwargs):
         
         super().__init__(name = name, **kwargs)
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dff = dff
+        self.dropout_rate = dropout_rate
 
         # Multi-Head Self-Attention
         self.attention = layers.MultiHeadAttention(num_heads = num_heads, key_dim = d_model // num_heads, name = "self_attention")
@@ -194,6 +235,16 @@ class DecoderLayer(layers.Layer):
 
         return x
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "d_model": self.d_model,
+            "num_heads": self.num_heads,
+            "dff": self.dff,
+            "dropout_rate": self.dropout_rate,
+        })
+        return config
+
 class Decoder(layers.Layer):
     def __init__(
         self, 
@@ -224,6 +275,18 @@ class Decoder(layers.Layer):
         
         return x
 
+    def get_config(self):
+        # Salva gli iperparametri del Decoder
+        config = super().get_config()
+        config.update({
+            "num_layers": len(self.decoder_layers), 
+            "d_model": self.decoder_layers[0].d_model,
+            "num_heads": self.decoder_layers[0].num_heads,
+            "dff": self.decoder_layers[0].dff,
+            "dropout_rate": self.decoder_layers[0].dropout_rate,
+        })
+        return config
+
 class SeqGen(tf.keras.Model):
     def __init__(
         self,
@@ -240,6 +303,12 @@ class SeqGen(tf.keras.Model):
     ):
         super().__init__(name = name, **kwargs)
 
+        self.num_layers = num_layers
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dff = dff
+        self.prediction_steps = prediction_steps
+        self.dropout_rate = dropout_rate
         self.num_sensors = num_sensors
         self.num_actuators = num_actuators
 
@@ -282,3 +351,19 @@ class SeqGen(tf.keras.Model):
         predictions = self.final_dense(decoder_output)
 
         return predictions
+
+    def get_config(self):
+        # Salva tutti gli iperparametri del modello completo per poterlo
+        # ricostruire identico
+        config = super().get_config()
+        config.update({
+            "num_layers": self.num_layers,
+            "d_model": self.d_model,
+            "num_heads": self.num_heads,
+            "dff": self.dff,
+            "prediction_steps": self.prediction_steps,
+            "num_sensors": self.num_sensors,
+            "num_actuators": self.num_actuators,
+            "dropout_rate": self.dropout_rate,
+        })
+        return config
