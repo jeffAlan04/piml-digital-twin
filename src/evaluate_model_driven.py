@@ -4,17 +4,17 @@ import matplotlib.pyplot as plt
 from dataset import split_simulations
 from model_driven import simulate, make_commands
 
-def prediction(test_sims, beta):
+def prediction(test_sims, alpha):
     predicted_A, predicted_B = [], []
 
     for test_sim in test_sims:
         # Comando del riscaldatore al primo istante
-        heater_on, _ = make_commands(test_sim)(test_sim['timestamp'].iloc[0])
+        _, cooler_level = make_commands(test_sim)(test_sim['timestamp'].iloc[0])
 
         # Stato di partenza
-        y0 = [test_sim['T_A'].iloc[0], test_sim['T_B'].iloc[0], beta[6] * heater_on, beta[7] * heater_on]
+        y0 = [test_sim['T_A'].iloc[0], test_sim['T_B'].iloc[0], alpha[9] * cooler_level]
 
-        sol = simulate(test_sim, beta, y0 = y0, max_step = 60.0)
+        sol = simulate(test_sim, alpha, y0 = y0, max_step = 60.0)
         predicted_A.append(sol.y[0])
         predicted_B.append(sol.y[1])
 
@@ -80,8 +80,8 @@ if __name__ == '__main__':
     sims = [g.reset_index(drop = True) for _, g in dataset.groupby('simulation_id')]
     train, val, test = split_simulations(sims) # Splitta in 3 set
 
-    beta = np.load('model/beta.npy') # Carica i beta migliori
-    predicted_A, predicted_B = prediction(test, beta) # Usa i beta caricati nel test set
+    alpha = np.load('model/alpha.npy') # Carica gli alpha migliori
+    predicted_A, predicted_B = prediction(test, alpha) # Usa gli alpha caricati nel test set
     m = metrics(predicted_A, predicted_B, test)
 
     print(' '.join(f'{name}: {value:.4f}' for name, value in m.items()))
