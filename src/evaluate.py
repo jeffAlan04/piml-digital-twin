@@ -19,62 +19,110 @@ _, _, test_sims = split_simulations(simulations) # Ottiene le simulazioni test
 test_norm = normalize_simulations(test_sims, mean, std) # Normalizza
 
 window_size = prediction_steps + 1 
+dt = 60
+
+"""
 test_window = make_sliding_windows(test_norm, window_size)
 X_test, Y_test = map_XY(test_window, prediction_steps) # Separa ogni finestra in input X e target Y
 
-# Predizione
-Y_pred = model.predict(X_test)
-
 # Denormalizzazione delle predizioni e dei valori reali
-Y_pred_real = Y_pred * std + mean
-Y_test_real = Y_test * std + mean
+delta_pred = model.predict(X_test, verbose = 0)
+T_in = X_test[:, :2, 2]
+Y_pred_real = (T_in[:, :, None] + delta_pred) * std + mean
+Y_test_real = (T_in[:, :, None] + Y_test) * std + mean
 
-# Metriche
-mse = np.mean(np.power(Y_pred_real - Y_test_real, 2))
-mae = np.mean(np.abs(Y_pred_real - Y_test_real))
-rmse = np.sqrt(np.mean((Y_pred_real - Y_test_real) ** 2))
+T0 = X_test[:, :2, 2] * std + mean
+persistence = np.repeat(T0[:, :, None], prediction_steps, axis = 2)
+"""
 
-y_true_mean = np.mean(Y_test_real)
-ss_tot = np.sum(np.power(Y_test_real - y_true_mean, 2))
-ss_res = np.sum(np.power(Y_test_real - Y_pred_real, 2))
-r2 = 1 - ss_res / ss_tot
+def metrics(pred, real):
+    # Metriche
+    mse = np.mean((pred - real) ** 2)
+    mae = np.mean(np.abs(pred - real))
+    rmse = np.sqrt(mse)
+    ss_tot = np.sum((real - np.mean(real)) ** 2)
+    ss_res = np.sum((real - pred) ** 2)
+    r2 = 1 - ss_res / ss_tot
 
+    return mse, mae, rmse, r2
 
-print(f"\nMetrics")
-print(f"MSE:  {mse:.4f}")
-print(f"MAE:  {mae:.4f} °C")
-print(f"RMSE: {rmse:.4f} °C")
-print(f"R^2: {r2:.4f}")
+# Lunghezza della porzione di test set più corta
+length = min(len(c) for c in test_sims)
+# Numero di porzioni nel test set
+count = len(test_sims)
 
+real_A = np.stack([c['T_A'].values[:length] for c in test_sims])
+real_B = np.stack([c['T_B'].values[:length] for c in test_sims])
+heater = np.stack([c['heater_state'].values[:length] for c in test_sims])
+cooler = np.stack([c['cooler_level'].values[:length] for c in test_sims]) / 9.0
 
-n_samples = 200
-# Sensore A
-plt.figure(figsize = (12, 4))
-plt.plot(Y_test_real[:n_samples, 0, 0], label = 'Real', alpha = 0.7)
-plt.plot(Y_pred_real[:n_samples, 0, 0], label = 'Predicted', alpha = 0.7)
-plt.xlabel('Sample')
-plt.ylabel('Temperature')
-plt.title('Sensor A')
-plt.legend()
-plt.tight_layout()
+# Prima temperatura di ogni simulazione normalizzata
+TA = (real_A[:, 0] - mean) / std
+TB = (real_B[:, 0] - mean) / std
 
-# Sensore B
-plt.figure(figsize=(12, 4))
-plt.plot(Y_test_real[:n_samples, 1, 0], label='Real', alpha=0.7)
-plt.plot(Y_pred_real[:n_samples, 1, 0], label='Predicted', alpha=0.7)
-plt.xlabel('Sample')
-plt.ylabel('Temperature')
-plt.title('Sensor B')
-plt.legend()
-plt.tight_layout()
+# Seleziona fra il test set quelle che partono con l'heater spento e lo accendono successivamente
+with_switch_on = [j for j in range(count) if heater[j, 0] == 0 and heater[j].max() == 1]
 
-# Scatter plot
-plt.figure(figsize = (12, 4))
-plt.scatter(Y_test_real[:, 0, 0], Y_pred_real[:, 0, 0], alpha = 0.3, s = 10)
-plt.plot([Y_test_real.min(), Y_test_real.max()],
-         [Y_test_real.min(), Y_test_real.max()], 'r--', label = 'Perfect')
-plt.xlabel('Real temperature')
-plt.ylabel('Predicted temperature')
-plt.legend()
+example = min(with_switch_on, default = 0, key = lambda j: abs(np.argmax(heater[j]) - length // 2))
+
+preds_A = np.zeros((count, length)); preds_A[:, 0] = real_A[:, 0]
+preds_B = np.zeros((count, length)); preds_B[:, 0] = real_B[:, 0]
+
+zeros, ones = np.zeros(count), np.ones(count)
+
+for t in range(1, length):
+    # Mette insieme temperatura attuale di A, B e azioni degli attuatori
+    X = np.stack([
+        np.stack([zeros, zeros, TA], axis = 1), # Sensore A: tipo 0, stanza 0
+        np.stack([zeros, ones, TB], axis = 1), # Sensore B: tipo 0, stanza 1
+        np.stack([ones, zeros, heater[:, t-1]], axis = 1), # heater: tipo 1, stanza 0
+        np.stack([2 * ones, zeros, cooler[:, t - 1]], axis = 1), # cooler: tipo 2, stanza 0
+    ], axis = 1).astype(np.float32)
+
+    # Variazione di temperatura
+    D = model(X, training = False).numpy()
+
+    # Somma il cambiamento alle temperature attuali
+    TA = TA + D[:, 0, 0]
+    TB = TB + D[:, 1, 0]
+
+    preds_A[:, t] = TA * std + mean
+    preds_B[:, t] = TB * std + mean
+
+mse, mae, rmse, r2 = metrics(np.concatenate([preds_A, preds_B]),np.concatenate([real_A,  real_B]))
+print(f"MSE {mse:.4f}  MAE {mae:.4f} °C  RMSE {rmse:.4f} °C  R2 {r2:.4f}")
+
+hours = np.arange(length) * dt / 3600
+
+fig, axes = plt.subplots(4, 1, figsize=(12, 12), sharex=True)
+
+axes[0].plot(hours, real_A[example], 'b-', linewidth=1.5, label='Real')
+axes[0].plot(hours, preds_A[example], 'r-', linewidth=1.5, label='Predicted')
+axes[0].set_ylabel('Temperature (°C)')
+axes[0].set_title('Sensor A')
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(hours, real_B[example], 'b-', linewidth=1.5, label='Real')
+axes[1].plot(hours, preds_B[example], 'r-', linewidth=1.5, label='Predicted')
+axes[1].set_ylabel('Temperature (°C)')
+axes[1].set_title('Sensor B')
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+axes[2].step(hours, heater[example], 'r-', linewidth=1.5, where='post')
+axes[2].set_ylabel('On/Off')
+axes[2].set_title('Heater')
+axes[2].set_yticks([0, 1])
+axes[2].grid(True, alpha=0.3)
+
+axes[3].step(hours, cooler[example] * 9, 'b-', linewidth=1.5, where='post')
+axes[3].set_ylim(-0.5, 9.5)
+axes[3].set_yticks(range(0, 10))
+axes[3].set_ylabel('Level')
+axes[3].set_title('Cooler')
+axes[3].set_xlabel('Hours')
+axes[3].grid(True, alpha=0.3)
+
 plt.tight_layout()
 plt.show()
