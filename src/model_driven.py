@@ -5,26 +5,26 @@ from scipy.integrate import solve_ivp
 from scipy.optimize import least_squares
 from dataset import split_simulations
 
-BETA_NAMES = [f'beta{i}' for i in range(1, 10)] + ['T_out']
+ALPHA_NAMES = [f'alpha{i}' for i in range(1, 11)]
 
-BETA_TRUE = np.array([
-    0.001, # beta1
-    0.1, # beta2
-    0.1, # beta3
-    0.002, # beta4
-    0.1, # beta5
-    0.001, # beta6
-    1.0, # beta7
-    0.5, # beta8
-    0.1, # beta9
-    15.0 # T_out
+ALPHA_REFERNCE = np.array([
+    0.001, # alpha1
+    0.1, # alpha2
+    0.1, # alpha3
+    0.002, # alpha4
+    0.1, # alpha5
+    15.0, # alpha6
+    1.0, # alpha7
+    0.5, # alpha8
+    np.nan, # alpha9
+    0.1 # alpha10
 ])
 
-BETA7 = 1.0
+ALPHA7 = 1.0
 ADJUSTABLE = [0, 1, 2, 3, 4, 5, 7, 8, 9] # Tutti tranne 7
 
-BETA_LOWER = np.array([1e-5, 1e-3, 1e-3, 1e-5, 1e-3, 1e-5, 1e-2, 1e-2, 1e-3, -20.0])
-BETA_UPPER = np.array([1e-1, 10, 10, 1e-1, 10, 1e-1, 100.0, 100.0, 10.0, 50.0])
+ALPHA_LOWER = np.array([1e-5, 1e-3, 1e-3, 1e-5, 1e-3, -20.0, 1e-2, 1e-2, 1e-5, 1e-3])
+ALPHA_UPPER = np.array([1e-1, 10.0, 10.0, 1e-1, 10.0, 50.0, 100., 100., 1e-1, 10.0])
 
 
 def make_commands(sim):
@@ -39,44 +39,47 @@ def make_commands(sim):
 
     return commands
 
-def deriv_beta(t, y, beta, commands):
-    T_A, T_B, H_A, H_B = y # Vettore di stato
-    b1, b2, b3, b4, b5, b6, b7, b8, b9, T_out = beta
+def deriv_alpha(t, y, alpha, commands):
+    T_A, T_B, C = y # Vettore di stato
+    a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 = alpha
 
     heater_state, cooler_level = commands(t) # Azioni degli attutatori all'istante t
-    cooling = b9 * cooler_level # Potenza del cooler
 
-    dT_A = b1 * (b2 * (T_out - T_A) + H_A - cooling + b3 * (T_B - T_A)) # Differenza di temperatura al secondo in questo istante nella stanza A
-    dT_B = b4 * (b5 * (T_out - T_B) + H_B + b3 * (T_A - T_B)) # Differenza di temperatura al secondo in questo istante nella stanza B
-    dH_A = b6 * (b7 * heater_state - H_A) 
-    dH_B = b6 * (b8 * heater_state - H_B) 
-    
-    return [dT_A, dT_B, dH_A, dH_B]
+    H_A = a7 * heater_state
+    H_B = a8 * heater_state
 
-def simulate(sim, beta, y0 = None, max_step = 60.0):
+    dT_A = a1 * (a2 * (a6 - T_A) + H_A - C + a3 * (T_B - T_A)) # Differenza di temperatura al secondo in questo istante nella stanza A
+    dT_B = a4 * (a5 * (a6 - T_B) + H_B + a3 * (T_A - T_B)) # Differenza di temperatura al secondo in questo istante nella stanza B
+    dC = a9 * (a10 * cooler_level - C) # Cooler con inerzia
+
+    return [dT_A, dT_B, dC]
+
+def simulate(sim, alpha, y0 = None, max_step = 60.0):
     t_grid = sim['timestamp'].values.astype(float) # Griglia temporale campionata ogni 60 secondi
+    commands = make_commands(sim)
 
     # Stato di partenza
     if y0 is None:
+        _, cooler0 = commands(t_grid[0])
         # Temperature misurate al primo campione e riscaldatori spenti
-        y0 = [sim['T_A'].iloc[0], sim['T_B'].iloc[0], 0.0, 0.0]
+        y0 = [sim['T_A'].iloc[0], sim['T_B'].iloc[0], alpha[9] * cooler0]
 
     return solve_ivp(
-        deriv_beta, 
+        deriv_alpha, 
         (t_grid[0], t_grid[-1]), 
         y0, 
         t_eval = t_grid, 
-        args = (beta, make_commands(sim)), 
+        args = (alpha, commands), 
         method = 'RK45', 
         max_step = max_step
     )
 
-def residuals(beta, sims, max_step = 60.0):
+def residuals(alpha, sims, max_step = 60.0):
     errors = []
 
     for sim in sims:
         # Simula la porzione di simulazione con questi parametri
-        sol = simulate(sim, beta, max_step = max_step)
+        sol = simulate(sim, alpha, max_step = max_step)
         if sol.y.shape[1] != len(sim):
             return np.full(2 * sum(len(s) for s in sims), 1e3)
         
@@ -85,7 +88,7 @@ def residuals(beta, sims, max_step = 60.0):
     
     return np.concatenate(errors)
 
-def initial_guess(sims, heater_rate = 1e-3):
+def initial_guess(sims, cooler_rate = 2e-2):
     rows, dTdt_A, dTdt_B = [], [], []
 
     for sim in sims:
@@ -117,58 +120,59 @@ def initial_guess(sims, heater_rate = 1e-3):
     outside_B, from_A, self_B, heater_B, cooler_B = coef_B
 
     """
-    C = b9 * cooler
-    H_A = b7 * heater
+    H_A = a7 * heater
+    H_B = a8 * heater
+    C = a10 * cooler
 
-    dT_A/dt = b1[b2(T_out - T_A) + H_A - C + b3(T_B - T_A)]
-    = b1[b2(T_out - T_A) + b7 * heater - b9 * cooler + b3(T_B - T_A)]
-    = b1b2(T_out - T_A) + b1b7 * heater - b1b9 * cooler + b1b3(T_B - T_A)]
-    = b1b2 * T_out - b1b2 * T_A + b1b7 * heater - b1b9 * cooler + b1b3 * T_B - b1b3 * T_A
-    = (b1b2 * T_out) + (-b1b2 - b1b3) * T_A + (b1b3) * T_B + (b1b7) * heater + (-b1b9) * cooler    
+    dT_A/dt = a1[a2(a6 - T_A) + H_A - C + a3(T_B - T_A)]
+    = a1[a2(a6 - T_A) + a7 * heater - a10 * cooler + a3(T_B - T_A)]
+    = a1a2(a6 - T_A) + a1a7 * heater - a1a10 * cooler + a1a3(T_B - T_A)
+    = a1a2 * a6 - a1a2 * T_A + a1a7 * heater - a1a10 * cooler + a1a3 * T_B - a1a3 * T_A
+    = (a1a2 * a6) + (-a1a2 - a1a3) * T_A + (a1a3) * T_B + (a1a7) * heater + (-a1a10) * cooler
     = (outside_A) + (self_A * T_A) + (from_B * T_B) + (heater_A * heater) + (cooler_A * cooler)
     
-    dT_B/dt = b4[b5(T_out(t) - T_B(t)) + H_B(t) + b3(T_A(t) - T_B(t))]
-    = (b4b5 * T_out) + (b4b3 * T_A) + ((-b4b5 - b4b3) * T_B) + (b4b8 * heater)
+    dT_B/dt = a4[a5(a6-T_B) + H_B + a3(T_A - T_B)]
+    = (a4a5 * a6) + (a4a3) * T_A + ((-a4a5 - a4a3) * T_B) + (a4a8 * heater) + 0 * cooler
 
-    - self_A = quanto A si raffredda sa sola
+    - self_A = quanto A si raffredda da sola
     - from_B = quanto B scalda A attraverso la parete
-    - self_B = quanto B si raffredda sa sola
+    - self_B = quanto B si raffredda da sola
     - from_A = quanto A scalda B attraverso la parete
+
     """
 
-    beta1 = heater_A / BETA7
-    beta2 = (-self_A - from_B) / beta1
-    beta3 = from_B / beta1
-    beta4 = from_A / beta3
-    beta5 = (-self_B - from_A) / beta4
-    beta8 = heater_B / beta4
-    beta9 = -cooler_A / beta1
+    a1 = heater_A / ALPHA7
+    a2 = (-self_A - from_B) / a1
+    a3 = from_B / a1
+    a4 = from_A / a3
+    a5 = (-self_B - from_A) / a4
+    a6 = outside_A / (a1 * a2)
+    a8 = heater_B / a4
+    a10 = -cooler_A / a1
 
-    T_out = outside_A / (beta1 * beta2)
-          
-    return np.array([beta1, beta2, beta3, beta4, beta5, heater_rate, BETA7, beta8, beta9, T_out])
+    return np.array([a1, a2, a3, a4, a5, a6, ALPHA7, a8, cooler_rate, a10])
 
-# Inserisce b7 fra i parametri
-def rebuild_beta(adjustable_values):
-    beta = np.empty(10)
-    beta[ADJUSTABLE] = adjustable_values
-    beta[6] = BETA7
-    return beta
+# Inserisce a7 fra i parametri
+def rebuild_alpha(adjustable_values):
+    alpha = np.empty(10)
+    alpha[ADJUSTABLE] = adjustable_values
+    alpha[6] = ALPHA7
+    return alpha
 
 # Passa 10 valori a residual
 def residuals_adjustable(adjustable_values, sims, max_step = 60.0):
-    return residuals(rebuild_beta(adjustable_values), sims, max_step)
+    return residuals(rebuild_alpha(adjustable_values), sims, max_step)
 
-def fit_beta(sims, beta_guess, max_step = 300.0):
+def fit_alpha(sims, alpha_guess, max_step = 300.0, verbose = 1):
     result = least_squares(
         residuals_adjustable, # Funzione che misura l'errore
-        beta_guess[ADJUSTABLE], # Nove valori del guess iniziale
+        alpha_guess[ADJUSTABLE], # Nove valori del guess iniziale
         args = (sims, max_step), # Argomenti passati alla funzione: porzioni da usare e passo con cui integrare
-        bounds = (BETA_LOWER[ADJUSTABLE], BETA_UPPER[ADJUSTABLE]), # Limiti
-        x_scale = np.abs(beta_guess[ADJUSTABLE]), 
-        verbose = 1,
+        bounds = (ALPHA_LOWER[ADJUSTABLE], ALPHA_UPPER[ADJUSTABLE]), # Limiti
+        x_scale = np.abs(alpha_guess[ADJUSTABLE]), 
+        verbose = verbose,
     )
-    return rebuild_beta(result.x), result
+    return rebuild_alpha(result.x), result
 """
 def plot_simulation(sim, beta, title = ''):
     sol = simulate(sim, beta)
@@ -225,18 +229,44 @@ if __name__ == '__main__':
 
     train, val , test = split_simulations(sims)
 
-    fit_portions = [s.iloc[:12 * 60 + 1] for s in train]
+    alpha_guess = initial_guess(train)
+    ratios = alpha_guess / ALPHA_REFERNCE
+    worst = max(np.nanmax(ratios), 1 / np.nanmin(ratios))
+    print(f'Fattore della guess: {worst:.2f}')
+    print(f'Initial MAE:' f'{np.abs(residuals(alpha_guess, train, 300.)).mean():.4f}\n')
 
-    beta_guess = initial_guess(fit_portions)
-    print(f'Initial MAE:' f'{np.abs(residuals(beta_guess, fit_portions, 300.)).mean():.4f}\n')
+    alpha_estimated, result = fit_alpha(train, alpha_guess)
 
-    beta_estimated, result = fit_beta(fit_portions, beta_guess)
-
-    print(f'\nFinal model_driven.pyMAE: {np.abs(result.fun).mean():.4f}\n')
-    for name, guessed, estimated, true in zip(BETA_NAMES, beta_guess, beta_estimated, BETA_TRUE):
+    print(f'\nFinal MAE: {np.abs(result.fun).mean():.4f}\n')
+    for name, guessed, estimated, true in zip(ALPHA_NAMES, alpha_guess, alpha_estimated, ALPHA_REFERNCE):
         print(f'{name:8s}{guessed:12.5g}{estimated:12.5g}{true:11.5g}')
 
-    np.save('model/beta.npy', beta_estimated)
+    np.save('model/alpha.npy', alpha_estimated)
+
+    fit_portions = [s.iloc[:12 * 60 + 1] for s in train]
+
+    rng = np.random.default_rng(1)
+    print(f'\n{"Perturbation":>16s}{"Failures":>12s}{"Worst MAE":>15s}')
+
+    _, reference = fit_alpha(fit_portions, alpha_guess, verbose = 0)
+    reference_mae = np.abs(reference.fun).mean()
+
+    for k in [1.5, 2.0, 3.0, 5.0]:
+        failures, worst_mae = 0, 0.0
+
+        for attempt in range(3):
+            perturbed = alpha_guess * np.exp(rng.uniform(-np.log(k), np.log(k), 10))
+            perturbed[6] = ALPHA7
+            perturbed = np.clip(perturbed, ALPHA_LOWER, ALPHA_UPPER)
+
+            estimated, res = fit_alpha(fit_portions, perturbed, verbose = 0)
+            mae = np.abs(res.fun).mean()
+
+            if mae > reference_mae * 1.1:
+                failures += 1
+            worst_mae = max(worst_mae, mae)
+
+        print(f'{"fino a x" + str(k):>16s}{failures:9d}/3{worst_mae:14.4f}')
 
     # plot_simulation(train[0], beta_estimated, 'Parametri stimati vs misure')
 
