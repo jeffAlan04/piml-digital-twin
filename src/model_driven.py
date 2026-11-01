@@ -231,13 +231,13 @@ if __name__ == '__main__':
 
     alpha_guess = initial_guess(train)
     ratios = alpha_guess / ALPHA_REFERNCE
-    worst = max(np.nanmax(ratios), 1 / np.nanmin(ratios))
-    print(f'Fattore della guess: {worst:.2f}')
+    worst_ratio = max(np.nanmax(ratios), 1 / np.nanmin(ratios))
+    print(f'Worst ratio: {worst_ratio:.2f}')
     print(f'Initial MAE:' f'{np.abs(residuals(alpha_guess, train, 300.)).mean():.4f}\n')
 
     alpha_estimated, result = fit_alpha(train, alpha_guess)
 
-    print(f'\nFinal MAE: {np.abs(result.fun).mean():.4f}\n')
+    print(f'\nFinal MAE:'f'{np.abs(result.fun).mean():.4f}\n')
     for name, guessed, estimated, true in zip(ALPHA_NAMES, alpha_guess, alpha_estimated, ALPHA_REFERNCE):
         print(f'{name:8s}{guessed:12.5g}{estimated:12.5g}{true:11.5g}')
 
@@ -266,7 +266,7 @@ if __name__ == '__main__':
                 failures += 1
             worst_mae = max(worst_mae, mae)
 
-        print(f'{"fino a x" + str(k):>16s}{failures:9d}/3{worst_mae:14.4f}')
+        print(f'{f"{k}x":>16s}{failures:9d}/3{worst_mae:14.4f}')
 
     # plot_simulation(train[0], beta_estimated, 'Parametri stimati vs misure')
 
