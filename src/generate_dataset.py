@@ -35,7 +35,7 @@ def run_simulation(actions, duration, T_A_initial, T_B_initial, dt = 60):
 
     return sol
 
-def sample_on_grid(sol, actions, duration, dt = 60, sigma = 0.1, rng = None):
+def sample_on_grid(sol, actions, dt = 60, sigma = 0.1, rng = None):
     rng = rng if rng is not None else np.random.default_rng()
     t_grid = sol.t
 
