@@ -26,6 +26,7 @@ ADJUSTABLE = [0, 1, 2, 3, 4, 5, 7, 8, 9] # Tutti tranne 7
 ALPHA_LOWER = np.array([1e-5, 1e-3, 1e-3, 1e-5, 1e-3, -20.0, 1e-2, 1e-2, 1e-5, 1e-3])
 ALPHA_UPPER = np.array([1e-1, 10.0, 10.0, 1e-1, 10.0, 50.0, 100., 100., 1e-1, 10.0])
 
+IDENTIFIABLE = [i for i in ADJUSTABLE if i != 8]
 
 def make_commands(sim):
     timestamp = sim['timestamp'].values.astype(float) # Estrae il timestamp
@@ -229,13 +230,16 @@ if __name__ == '__main__':
 
     train, val , test = split_simulations(sims)
 
-    alpha_guess = initial_guess(train)
+    fit_set = [pd.concat([t, v], ignore_index = True)
+               for t, v in zip(train, val)]
+
+    alpha_guess = initial_guess(fit_set)
     ratios = alpha_guess / ALPHA_REFERNCE
     worst_ratio = max(np.nanmax(ratios), 1 / np.nanmin(ratios))
     print(f'Worst ratio: {worst_ratio:.2f}')
-    print(f'Initial MAE:' f'{np.abs(residuals(alpha_guess, train, 300.)).mean():.4f}\n')
+    print(f'Initial MAE:' f'{np.abs(residuals(alpha_guess, fit_set, 300.)).mean():.4f}\n')
 
-    alpha_estimated, result = fit_alpha(train, alpha_guess)
+    alpha_estimated, result = fit_alpha(fit_set, alpha_guess)
 
     print(f'\nFinal MAE:'f'{np.abs(result.fun).mean():.4f}\n')
     for name, guessed, estimated, true in zip(ALPHA_NAMES, alpha_guess, alpha_estimated, ALPHA_REFERNCE):
@@ -243,16 +247,19 @@ if __name__ == '__main__':
 
     np.save('model/alpha.npy', alpha_estimated)
 
-    fit_portions = [s.iloc[:12 * 60 + 1] for s in train]
+    fit_portions = [s.iloc[:12 * 60 + 1] for s in fit_set]
 
-    rng = np.random.default_rng(1)
-    print(f'\n{"Perturbation":>16s}{"Failures":>12s}{"Worst MAE":>15s}')
-
-    _, reference = fit_alpha(fit_portions, alpha_guess, verbose = 0)
+    reference_estimated, reference = fit_alpha(fit_portions, alpha_guess, verbose = 0)
     reference_mae = np.abs(reference.fun).mean()
 
+    print(f'{"perturbation":>14s}{"best MAE":>11s}{"worst MAE":>11s}'f'{"worst drift":>13s}{"parameter":>12s}{"others":>10s}')
+
+    rng = np.random.default_rng(1)
+
     for k in [1.5, 2.0, 3.0, 5.0]:
-        failures, worst_mae = 0, 0.0
+        best_mae, worst_mae = np.inf, 0.0
+        worst_drift, worst_name = 0.0, ''
+        worst_drift_id = 0.0
 
         for attempt in range(3):
             perturbed = alpha_guess * np.exp(rng.uniform(-np.log(k), np.log(k), 10))
@@ -261,12 +268,18 @@ if __name__ == '__main__':
 
             estimated, res = fit_alpha(fit_portions, perturbed, verbose = 0)
             mae = np.abs(res.fun).mean()
-
-            if mae > reference_mae * 1.1:
-                failures += 1
+            best_mae = min(best_mae, mae)
             worst_mae = max(worst_mae, mae)
 
-        print(f'{f"{k}x":>16s}{failures:9d}/3{worst_mae:14.4f}')
+            drift = np.abs(estimated - reference_estimated) / np.abs(reference_estimated)
+            if drift.max() > worst_drift:
+                worst_drift = drift.max()
+                worst_name = ALPHA_NAMES[int(np.argmax(drift))]
+
+            worst_drift_id = max(worst_drift_id, drift[IDENTIFIABLE].max())
+
+        print(f'{f"{k}x":>14s}{best_mae:11.4f}{worst_mae:11.4f}'f'{worst_drift:12.1%}{worst_name:>12s}{worst_drift_id:9.1%}')
+
 
     # plot_simulation(train[0], beta_estimated, 'Parametri stimati vs misure')
 
