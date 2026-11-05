@@ -92,7 +92,7 @@ for t in range(1, length):
 mse, mae, rmse, r2 = metrics(np.concatenate([preds_A, preds_B]),np.concatenate([real_A,  real_B]))
 print(f"MSE {mse:.4f}  MAE {mae:.4f} °C  RMSE {rmse:.4f} °C  R2 {r2:.4f}")
 
-hours = np.arange(length) * dt / 3600
+hours = test_sims[example]['timestamp'].values[:length] / 3600
 
 fig, axes = plt.subplots(4, 1, figsize=(12, 12), sharex=True)
 
